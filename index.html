@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="data:," />
+    <title>VRMビューワー</title>
+    <style>
+      button, [role="button"], select, summary, input:not([type="checkbox"], [type="radio"]) { min-height: 2rem; }
+    </style>
+    <link rel="stylesheet" href="css/viewer.css?v=2026-11-20.05" />
+  </head>
+
+<body>
+<div id="stage" aria-label="3Dビュー"></div>
+
+<div id="top-left">
+  <div id="statusbar">
+    <div class="chip">
+      <h1>VRMビューワー<span class="sub" id="vrmver">VRM 1.0 / 0.x</span></h1>
+      <div id="loadmsg">モデルを読み込んでいます…</div>
+      <div id="buildstamp">JSビルド 2026-11-20.05</div>
+    </div>
+    <div class="chip" id="stats" hidden></div>
+  </div>
+
+  <div id="cambar" role="group" aria-label="カメラ・ファイル">
+    <button class="act small" data-cam="full" type="button">全身</button>
+    <button class="act small" data-cam="face" type="button">顔アップ</button>
+    <button class="act small" data-cam="front" type="button">正面</button>
+    <button class="act small" data-cam="side" type="button">横</button>
+    <button class="act small" data-cam="back" type="button">背面</button>
+    <button class="act small on" id="gridbtn" type="button">1m方眼</button>
+    <button class="act small" id="fsbtn" type="button">全画面</button>
+    <label class="act small" for="file-open">VRMを開く</label>
+  </div>
+</div>
+<input id="file-open" type="file" accept=".vrm,.glb" hidden />
+
+<div id="stalebar" role="alert" hidden>
+  <span class="stale-msg">⚠ <b>古いコピーを表示しています</b>（実行中ビルド <b id="stale-running">?</b> ／ サーバー上の最新 <b id="stale-served">?</b>）。<b>Ctrl+Shift+R</b> で強制再読み込みしてください。</span>
+  <button type="button" id="stale-close" aria-label="閉じる">×</button>
+</div>
+
+<button id="debugFab" type="button" aria-label="操作パネルを開く（Hキーでも開閉）" title="操作パネル（Hキーでも開閉）">⚙ 操作</button>
+
+<aside id="panel" class="closed" aria-label="操作パネル">
+  <div class="panel-head">
+    <div class="panel-head-top">
+      <button id="paneltoggle" aria-expanded="false" type="button">✕ パネルを閉じる（H）</button>
+    </div>
+    <div class="tabs" role="tablist">
+      <button class="tab-btn on" data-tab="motion" role="tab" aria-selected="true" type="button">動き</button>
+      <button class="tab-btn" data-tab="melee" role="tab" aria-selected="false" type="button">格闘</button>
+      <button class="tab-btn" data-tab="expr" role="tab" aria-selected="false" type="button">表情</button>
+      <button class="tab-btn" data-tab="look" role="tab" aria-selected="false" type="button">撮影</button>
+      <button class="tab-btn" data-tab="model" role="tab" aria-selected="false" type="button">モデル</button>
+    </div>
+  </div>
+
+  <!-- 「動き」「格闘」両タブ共通のモーション再生プレイヤー -->
+  <div id="motion-player-wrap">
+    <div id="motion-player">
+      <div class="mp-head">
+        <span id="mp-name">停止中（ポーズ待機）</span>
+        <span id="mp-time">0.00s / 0.00s</span>
+      </div>
+      <div class="mp-scrub-row">
+        <input type="range" id="mp-scrub" min="0" max="1" step="0.01" value="0" aria-label="モーション再生位置" disabled />
+      </div>
+      <div class="mp-ctrls">
+        <button class="act small" id="mp-play" type="button" disabled>⏸ 一時停止</button>
+        <button class="act small" id="mp-restart" type="button" disabled>⏮ 最初から</button>
+        <button class="act small" id="mp-stop" type="button" disabled>■ 止める</button>
+      </div>
+      <div class="mp-speeds" id="mp-speeds">
+        <span>速度:</span>
+        <button class="act small" data-speed="0.25" type="button">0.25×</button>
+        <button class="act small" data-speed="0.5" type="button">0.5×</button>
+        <button class="act small on" data-speed="1" type="button">1×</button>
+        <button class="act small" data-speed="1.5" type="button">1.5×</button>
+        <button class="act small" data-speed="2" type="button">2×</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TAB 1: 動き（基本・剣・VS・EXVS・エモート・ポーズ・しっぽ） ===== -->
+  <div class="tab-pane on" id="tab-motion" role="tabpanel">
+    <section aria-labelledby="h-player">
+      <h2 id="h-player">モーション一覧</h2>
+      <div id="motion-groups"></div>
+      <p class="hint">ループ系以外は再生後に自動で待機ポーズへ戻ります。一時停止／シークで任意フレームを確認できます。</p>
+    </section>
+
+    <section aria-labelledby="h-pose">
+      <h2 id="h-pose">ポーズ・関節</h2>
+      <details class="grp">
+        <summary>基本・武器ポーズ＆関節スライダー</summary>
+        <div class="row" id="pose-row">
+          <button class="act on" data-pose="stand" type="button">通常</button>
+          <button class="act" data-pose="wave" type="button">手を振る</button>
+          <button class="act" data-pose="banzai" type="button">バンザイ</button>
+          <button class="act" data-pose="onehand" type="button">片手を上げる</button>
+        </div>
+        <div class="row">
+          <button class="act" id="bow-once" type="button">おじぎする</button>
+          <button class="act" id="jump-once" type="button">ジャンプ</button>
+        </div>
+        <p class="hint">鰤ソードのポーズ：</p>
+        <div class="row" id="sword-pose-row">
+          <button class="act" data-pose="katsugu" type="button">担ぐ</button>
+          <button class="act" data-pose="kamae" type="button">構え（刀中段）</button>
+          <button class="act" data-pose="nio" type="button">仁王立ち</button>
+        </div>
+        <div id="joint-sliders"></div>
+      </details>
+    </section>
+
+    <section aria-labelledby="h-tail">
+      <h2 id="h-tail">しっぽ（連動表現）</h2>
+      <div class="row" id="tail-row">
+        <button class="act on" data-tail="normal" type="button">ふつう</button>
+        <button class="act" data-tail="happy" type="button">うれしい</button>
+        <button class="act" data-tail="sleepy" type="button">ねむい</button>
+        <button class="act" data-tail="surprised" type="button">びっくり</button>
+      </div>
+      <p class="hint">しっぽボーンがあるモデルでは気分に合わせて振り方と表情が連動します。</p>
+    </section>
+  </div>
+
+  <!-- ===== TAB 2: 格闘（徒手空拳・カンフー・東方不敗・サイヤ人） ===== -->
+  <div class="tab-pane" id="tab-melee" role="tabpanel">
+    <section aria-labelledby="h-melee-pose">
+      <h2 id="h-melee-pose">格闘ポーズ（構え）</h2>
+      <div class="row" id="melee-pose-row">
+        <button class="act small" data-pose="boxing_guard" type="button">ボクシング構え</button>
+        <button class="act small" data-pose="kungfu_ready" type="button">カンフー構え</button>
+        <button class="act small" data-pose="mabu" type="button">馬歩（四股立ち）</button>
+        <button class="act small" data-pose="saiyan_charge" type="button">サイヤ人気溜め</button>
+        <button class="act small" data-pose="toho_fuhai" type="button">東方不敗構え</button>
+        <button class="act small" data-pose="stand" type="button">構え解除</button>
+      </div>
+    </section>
+    <section aria-labelledby="h-melee">
+      <h2 id="h-melee">徒手空拳モーション（22種）</h2>
+      <div id="melee-groups"></div>
+    </section>
+  </div>
+
+  <!-- ===== TAB 3: 表情 ===== -->
+  <div class="tab-pane" id="tab-expr" role="tabpanel">
+    <section aria-labelledby="h-expr">
+      <h2 id="h-expr">表情プリセット <button class="act small" id="expr-reset" type="button">リセット</button></h2>
+      <div class="row" id="expr-presets">
+        <button class="act" data-expr="happy" type="button">笑顔</button>
+        <button class="act" data-expr="angry" type="button">怒り</button>
+        <button class="act" data-expr="sad" type="button">悲しみ</button>
+        <button class="act" data-expr="surprised" type="button">驚き</button>
+        <button class="act" data-expr="relaxed" type="button">ほっと</button>
+      </div>
+      <p class="hint">追加の表情（モデルに含まれるもの）：</p>
+      <div class="row" id="expr-extra">
+        <button class="act" data-expr="sleepy" type="button">眠い</button>
+        <button class="act" data-expr="zito" type="button">ジト目</button>
+        <button class="act" data-expr="satori" type="button">さとり</button>
+        <button class="act" data-expr="fun" type="button">にっこり</button>
+        <button class="act" data-expr="dislike" type="button">不機嫌</button>
+        <button class="act" data-expr="wink" type="button">ウインク</button>
+        <button class="act" data-expr="pout" type="button">ふくれっ面</button>
+        <button class="act" data-expr="pien" type="button">ぴえん</button>
+        <button class="act" data-expr="heart" type="button">ハート目</button>
+        <button class="act" data-expr="twinkle" type="button">キラキラ目</button>
+        <button class="act" data-expr="pero" type="button">てへぺろ</button>
+      </div>
+      <p class="hint">口の形：</p>
+      <div class="row" id="mouth-row">
+        <button class="act" data-mouth="aa" type="button">あ</button>
+        <button class="act" data-mouth="ih" type="button">い</button>
+        <button class="act" data-mouth="ou" type="button">う</button>
+        <button class="act" data-mouth="ee" type="button">え</button>
+        <button class="act" data-mouth="oh" type="button">お</button>
+        <button class="act" data-mouth="" type="button">閉じる</button>
+      </div>
+      <div class="row">
+        <button class="act" id="blink-once" type="button">まばたきする</button>
+      </div>
+      <details class="grp" open>
+        <summary>表情スライダー</summary>
+        <div id="expr-sliders"></div>
+      </details>
+    </section>
+  </div>
+
+  <!-- ===== TAB 4: 撮影・色・ライティング ===== -->
+  <div class="tab-pane" id="tab-look" role="tabpanel">
+    <section aria-labelledby="h-shot">
+      <h2 id="h-shot">スクリーンショット</h2>
+      <div class="row">
+        <button class="act" id="shot" type="button">PNG保存</button>
+        <button class="act" id="shot-alpha" type="button">背景透過PNG保存</button>
+      </div>
+    </section>
+
+    <section aria-labelledby="h-light">
+      <h2 id="h-light">ライティング <button class="act small" id="light-reset" type="button">初期値</button></h2>
+      <div class="slider"><span>主ライト</span><input type="range" id="light-key" min="0" max="3" step="0.05" value="1.6" aria-label="主ライト強さ" /><output id="light-key-out">1.60</output></div>
+      <div class="slider"><span>光・左右</span><input type="range" id="light-az" min="-180" max="180" step="1" value="39" aria-label="光の左右角度" /><output id="light-az-out">39°</output></div>
+      <div class="slider"><span>光・高さ</span><input type="range" id="light-el" min="5" max="85" step="1" value="45" aria-label="光の高さ角度" /><output id="light-el-out">45°</output></div>
+      <div class="slider"><span>環境光</span><input type="range" id="light-amb" min="0" max="2" step="0.05" value="0.85" aria-label="環境光の強さ" /><output id="light-amb-out">0.85</output></div>
+      <div class="slider"><span>露出</span><input type="range" id="light-exp" min="0.5" max="1.8" step="0.05" value="1.05" aria-label="画面の露出" /><output id="light-exp-out">1.05</output></div>
+      <div class="toggle"><span>地面の影を表示</span><button id="tg-shadow" aria-pressed="true" aria-label="地面の影を表示" type="button"></button></div>
+      <div class="toggle"><span>1m方眼グリッド床</span><button id="tg-grid" aria-pressed="true" aria-label="1m方眼グリッド床" type="button"></button></div>
+    </section>
+
+    <section aria-labelledby="h-auto">
+      <h2 id="h-auto">自動の動き・背景・表示</h2>
+      <div class="toggle"><span>自動まばたき</span><button id="tg-blink" aria-pressed="true" aria-label="自動まばたき" type="button"></button></div>
+      <div class="toggle"><span>呼吸（アイドル待機）</span><button id="tg-breath" aria-pressed="true" aria-label="呼吸" type="button"></button></div>
+      <div class="toggle"><span>髪・しっぽの揺れ（SpringBone）</span><button id="tg-sway" aria-pressed="true" aria-label="髪としっぽの揺れ" type="button"></button></div>
+      <div class="toggle"><span>ポインターを目・頭で追う</span><button id="tg-look" aria-pressed="false" aria-label="ポインターを目と頭で追う" type="button"></button></div>
+      <div class="toggle"><span>ターンテーブル（自動回転）</span><button id="tg-spin" aria-pressed="false" aria-label="ターンテーブル" type="button"></button></div>
+      <div class="toggle"><span>ワイヤーフレーム</span><button id="tg-wire" aria-pressed="false" aria-label="ワイヤーフレーム" type="button"></button></div>
+      <p class="hint">背景：</p>
+      <div class="swatches" id="bg-swatches">
+        <button data-bg="sky" class="on" style="background:linear-gradient(180deg,#2e7cd6,#a9d6f5)" aria-label="青空" type="button"></button>
+        <button data-bg="studio" style="background:#232733" aria-label="スタジオ" type="button"></button>
+        <button data-bg="pink" style="background:#f6c6d3" aria-label="ピンク" type="button"></button>
+        <button data-bg="mint" style="background:#bfe6dd" aria-label="ミント" type="button"></button>
+        <button data-bg="night" style="background:#0d1020" aria-label="夜" type="button"></button>
+        <button data-bg="white" style="background:#f4f4f6" aria-label="白" type="button"></button>
+      </div>
+    </section>
+
+    <section aria-labelledby="h-color">
+      <h2 id="h-color">色替え <button class="act small" id="color-reset" type="button">色をリセット</button></h2>
+      <details class="grp">
+        <summary>プリセット＆マテリアル色</summary>
+        <div id="color-presets"></div>
+        <div id="color-pair">
+          <div class="slider"><span>フーディ</span><input type="color" id="hoodie-color" value="#f6c6d3" aria-label="フーディの色" /></div>
+          <div class="slider"><span>クロッグ</span><input type="color" id="clog-color" value="#f0a6be" aria-label="クロッグの色" /></div>
+        </div>
+        <p class="hint">マテリアルごとの色（全モデル共通）：</p>
+        <div id="mat-colors"></div>
+      </details>
+    </section>
+  </div>
+
+  <!-- ===== TAB 5: モデル ===== -->
+  <div class="tab-pane" id="tab-model" role="tabpanel">
+    <section aria-labelledby="h-model">
+      <h2 id="h-model">モデル読み込み</h2>
+      <label class="act openmodel" for="file-open">別のVRM / GLBファイルを開く</label>
+      <p class="hint">.vrm（VRM 1.0 / 0.x）・.glb ファイルを画面にドラッグ＆ドロップしても読み込めます。<br />左ドラッグで回転、ホイール／ピンチで拡大縮小、右ドラッグで平行移動できます。</p>
+      <div id="modelinfo"></div>
+    </section>
+  </div>
+</aside>
+
+<div id="overlay" role="status" aria-live="polite"><div class="box">
+  <div class="ring" aria-hidden="true"></div>
+  <p id="overlay-title">モデルを読み込んでいます…</p>
+  <p id="overlay-sub">しばらくお待ちください</p>
+</div></div>
+<div id="dropveil">VRM / GLB ファイルをドロップして読み込む</div>
+<div id="errbox" role="alert"></div>
+
+<script src="assets/three.min.js"></script>
+<script src="js/core.js?v=2026-11-20.05"></script>
+<script src="js/motions/registry.js?v=2026-11-20.05"></script>
+<script src="js/motions/basic.js?v=2026-11-20.05"></script>
+<script src="js/motions/sword.js?v=2026-11-20.05"></script>
+<script src="js/motions/vs.js?v=2026-11-20.05"></script>
+<script src="js/motions/exvs.js?v=2026-11-20.05"></script>
+<script src="js/motions/exvs_sword.js?v=2026-11-20.05"></script>
+<script src="js/motions/emotes.js?v=2026-11-20.05"></script>
+<script src="js/motions/melee.js?v=2026-11-20.05"></script>
+<script src="js/ui.js?v=2026-11-20.05"></script>
+</body>
+</html>
