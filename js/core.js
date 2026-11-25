@@ -808,17 +808,17 @@ V.loadDefault = function(){
   if (window.location.protocol === 'file:'){
     var msg = 'ブラウザのセキュリティ制限のため、file:/// からは自動読み込みできません。\n' +
               'ローカルサーバーを起動して http://localhost:8000 で開くか、\n' +
-              '画面上の「VRMを開く」から assets/model.vrm を選択してください。';
+              '画面上の「VRMを開く」から models/model00.vrm を選択してください。';
     showError(msg);
     setLoading(false);
     return;
   }
 
   setLoading(true, 'モデルを読み込んでいます…', '初期モデルを取得中');
-  fetchModelInChunks('assets/model.vrm')
+  fetchModelInChunks('models/model00.vrm')
     .then(function(buf){ V.loadVrmFromArrayBuffer(buf, '初期モデル'); })
     .catch(function(e){
-      showError('モデルの読み込みに失敗しました: ' + e.message + '\n（assets/model.vrm が存在するか、ローカルサーバーが起動しているか確認してください）');
+      showError('モデルの読み込みに失敗しました: ' + e.message + '\n（models/model00.vrm が存在するか、ローカルサーバーが起動しているか確認してください）');
       setLoading(false);
     });
 };
